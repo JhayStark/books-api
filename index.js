@@ -444,12 +444,13 @@ app.post(
   handleValidationErrors,
   async (req, res) => {
     try {
-      const { title, author, description } = req.body;
+      const { title, author, description, image } = req.body;
 
       const bookData = {
         title,
         author,
         description,
+        image,
       };
 
       // Debug logging
@@ -460,19 +461,19 @@ app.post(
       );
 
       // Add image URL based on storage type
-      if (req.file) {
-        if (process.env.CLOUDINARY_CLOUD_NAME) {
-          // Cloudinary storage - use the secure_url from Cloudinary
-          bookData.image = req.file.path || req.file.secure_url || req.file.url;
-          console.log("Cloudinary image URL:", bookData.image);
-        } else {
-          // Local storage - use local path
-          bookData.image = `/uploads/${req.file.filename}`;
-          console.log("Local image path:", bookData.image);
-        }
-      } else {
-        console.log("No file uploaded");
-      }
+      // if (req.file) {
+      //   if (process.env.CLOUDINARY_CLOUD_NAME) {
+      //     // Cloudinary storage - use the secure_url from Cloudinary
+      //     bookData.image = req.file.path || req.file.secure_url || req.file.url;
+      //     console.log("Cloudinary image URL:", bookData.image);
+      //   } else {
+      //     // Local storage - use local path
+      //     bookData.image = `/uploads/${req.file.filename}`;
+      //     console.log("Local image path:", bookData.image);
+      //   }
+      // } else {
+      //   console.log("No file uploaded");
+      // }
 
       console.log("Book data before saving:", bookData);
 
