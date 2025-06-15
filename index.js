@@ -8,9 +8,13 @@ const swaggerJSDoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
+const cors = require("cors");
 require("dotenv").config();
 
 const app = express();
+
+app.use(cors()); // Allow all origins
+
 const PORT = process.env.PORT || 3000;
 
 // Configure Cloudinary
