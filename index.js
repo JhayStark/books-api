@@ -30,6 +30,10 @@ const swaggerOptions = {
         url: `http://localhost:${PORT}`,
         description: "Development server",
       },
+      {
+        url: `https://books-api-cqpi.onrender.com`,
+        description: "Production server",
+      },
     ],
     components: {
       schemas: {
