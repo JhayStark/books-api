@@ -4,10 +4,215 @@ const multer = require("multer");
 const { body, validationResult, param } = require("express-validator");
 const path = require("path");
 const fs = require("fs");
+const swaggerJSDoc = require("swagger-jsdoc");
+const swaggerUi = require("swagger-ui-express");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Swagger configuration
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+    info: {
+      title: "Books API",
+      version: "1.0.0",
+      description:
+        "A comprehensive API for managing books with MongoDB and Express.js",
+      contact: {
+        name: "API Support",
+        email: "support@booksapi.com",
+      },
+    },
+    servers: [
+      {
+        url: `http://localhost:${PORT}`,
+        description: "Development server",
+      },
+    ],
+    components: {
+      schemas: {
+        Book: {
+          type: "object",
+          required: ["title", "author", "description"],
+          properties: {
+            _id: {
+              type: "string",
+              description: "MongoDB ObjectId",
+              example: "64f5a1b2c3d4e5f6a7b8c9d0",
+            },
+            title: {
+              type: "string",
+              maxLength: 200,
+              description: "Book title",
+              example: "The Great Gatsby",
+            },
+            author: {
+              type: "string",
+              maxLength: 100,
+              description: "Book author",
+              example: "F. Scott Fitzgerald",
+            },
+            description: {
+              type: "string",
+              minLength: 10,
+              maxLength: 1000,
+              description: "Book description",
+              example:
+                "A classic American novel about the Jazz Age and the American Dream",
+            },
+            image: {
+              type: "string",
+              description: "Path to book cover image",
+              example: "/uploads/book-1234567890-123456789.jpg",
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              description: "Creation timestamp",
+            },
+            updatedAt: {
+              type: "string",
+              format: "date-time",
+              description: "Last update timestamp",
+            },
+          },
+        },
+        BookInput: {
+          type: "object",
+          required: ["title", "author", "description"],
+          properties: {
+            title: {
+              type: "string",
+              maxLength: 200,
+              description: "Book title",
+              example: "The Great Gatsby",
+            },
+            author: {
+              type: "string",
+              maxLength: 100,
+              description: "Book author",
+              example: "F. Scott Fitzgerald",
+            },
+            description: {
+              type: "string",
+              minLength: 10,
+              maxLength: 1000,
+              description: "Book description",
+              example:
+                "A classic American novel about the Jazz Age and the American Dream",
+            },
+            image: {
+              type: "string",
+              format: "binary",
+              description: "Book cover image file",
+            },
+          },
+        },
+        Error: {
+          type: "object",
+          properties: {
+            success: {
+              type: "boolean",
+              example: false,
+            },
+            message: {
+              type: "string",
+              example: "Error message",
+            },
+            errors: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  field: {
+                    type: "string",
+                  },
+                  message: {
+                    type: "string",
+                  },
+                },
+              },
+            },
+          },
+        },
+        Success: {
+          type: "object",
+          properties: {
+            success: {
+              type: "boolean",
+              example: true,
+            },
+            message: {
+              type: "string",
+              example: "Operation successful",
+            },
+            data: {
+              $ref: "#/components/schemas/Book",
+            },
+          },
+        },
+        BooksList: {
+          type: "object",
+          properties: {
+            success: {
+              type: "boolean",
+              example: true,
+            },
+            data: {
+              type: "array",
+              items: {
+                $ref: "#/components/schemas/Book",
+              },
+            },
+            pagination: {
+              type: "object",
+              properties: {
+                currentPage: {
+                  type: "integer",
+                  example: 1,
+                },
+                totalPages: {
+                  type: "integer",
+                  example: 5,
+                },
+                totalBooks: {
+                  type: "integer",
+                  example: 47,
+                },
+                hasNextPage: {
+                  type: "boolean",
+                  example: true,
+                },
+                hasPrevPage: {
+                  type: "boolean",
+                  example: false,
+                },
+                limit: {
+                  type: "integer",
+                  example: 10,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  apis: ["./index.js"], // Path to the API docs
+};
+
+const specs = swaggerJSDoc(swaggerOptions);
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(specs, {
+    explorer: true,
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "Books API Documentation",
+  })
+);
 
 // Middleware
 app.use(express.json());
@@ -50,42 +255,40 @@ const upload = multer({
 });
 
 // MongoDB connection
-mongoose
-  .connect(process.env.MONGODB_URI || "mongodb://localhost:27017/books-api", {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log("Connected to MongoDB"))
-  .catch((err) => console.error("MongoDB connection error:", err));
 
 // Book Schema
-const bookSchema = new mongoose.Schema(
-  {
-    title: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 200,
-    },
-    author: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 100,
-    },
-    description: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 1000,
-    },
-    image: {
-      type: String,
-      required: false,
-    },
+const bookSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 200,
   },
-  { timestamps: true }
-);
+  author: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 100,
+  },
+  description: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 1000,
+  },
+  image: {
+    type: String,
+    required: false,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+});
 
 // Update the updatedAt field before saving
 bookSchema.pre("save", function (next) {
@@ -145,6 +348,39 @@ const handleValidationErrors = (req, res, next) => {
 
 // Routes
 
+/**
+ * @swagger
+ * /api/books:
+ *   post:
+ *     summary: Add a new book
+ *     description: Create a new book with title, author, description, and optional image upload
+ *     tags: [Books]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             $ref: '#/components/schemas/BookInput'
+ *     responses:
+ *       201:
+ *         description: Book created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Success'
+ *       400:
+ *         description: Validation error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // 1. Add a new book
 app.post(
   "/api/books",
@@ -202,6 +438,53 @@ app.post(
   }
 );
 
+/**
+ * @swagger
+ * /api/books/{id}:
+ *   get:
+ *     summary: Get a single book by ID
+ *     description: Retrieve a specific book using its MongoDB ObjectId
+ *     tags: [Books]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         description: MongoDB ObjectId of the book
+ *         schema:
+ *           type: string
+ *           example: "64f5a1b2c3d4e5f6a7b8c9d0"
+ *     responses:
+ *       200:
+ *         description: Book found successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/Book'
+ *       400:
+ *         description: Invalid book ID format
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       404:
+ *         description: Book not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // 2. Get a single book by ID
 app.get(
   "/api/books/:id",
@@ -232,6 +515,62 @@ app.get(
   }
 );
 
+/**
+ * @swagger
+ * /api/books:
+ *   get:
+ *     summary: List all books
+ *     description: Retrieve a paginated list of books with optional search and sorting
+ *     tags: [Books]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of books per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search term to filter books by title, author, or description
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [title, author, createdAt, updatedAt]
+ *           default: createdAt
+ *         description: Field to sort by
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: desc
+ *         description: Sort order (ascending or descending)
+ *     responses:
+ *       200:
+ *         description: Books retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BooksList'
+ *       500:
+ *         description: Internal server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Error'
+ */
 // 3. List all books with optional pagination and search
 app.get("/api/books", async (req, res) => {
   try {
@@ -287,6 +626,32 @@ app.get("/api/books", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/health:
+ *   get:
+ *     summary: Health check endpoint
+ *     description: Check if the API is running and responsive
+ *     tags: [Health]
+ *     responses:
+ *       200:
+ *         description: API is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Books API is running"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2025-06-14T10:30:00.000Z"
+ */
 // Health check endpoint
 app.get("/api/health", (req, res) => {
   res.json({
@@ -323,9 +688,17 @@ app.use((error, req, res, next) => {
 });
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  await mongoose
+    .connect(process.env.MONGODB_URI, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    })
+    .then(() => console.log("Connected to MongoDB"))
+    .catch((err) => console.error("MongoDB connection error:", err));
   console.log(`Server is running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log(`API Documentation: http://localhost:${PORT}/api-docs`);
 });
 
 module.exports = app;
