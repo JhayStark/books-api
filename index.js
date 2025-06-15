@@ -105,6 +105,10 @@ const swaggerOptions = {
         url: `http://localhost:${PORT}`,
         description: "Development server",
       },
+      {
+        url: `${process.env.API_BASE_URL}`,
+        description: "Production server",
+      },
     ],
     components: {
       schemas: {
