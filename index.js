@@ -6,10 +6,81 @@ const path = require("path");
 const fs = require("fs");
 const swaggerJSDoc = require("swagger-jsdoc");
 const swaggerUi = require("swagger-ui-express");
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
+
+// Configure Cloudinary storage for multer
+const cloudinaryStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: "books-api", // Folder name in Cloudinary
+    allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
+    transformation: [
+      { width: 800, height: 1200, crop: "limit" }, // Resize large images
+      { quality: "auto" }, // Auto optimize quality
+    ],
+    public_id: (req, file) => {
+      // Generate unique filename
+      const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+      return `book-${uniqueSuffix}`;
+    },
+  },
+});
+
+// Fallback to local storage if Cloudinary is not configured
+const localFileStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    // Create uploads directory if it doesn't exist
+    if (!fs.existsSync("uploads")) {
+      fs.mkdirSync("uploads");
+    }
+    cb(null, "uploads/");
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "book-" + uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+// File filter for image validation
+const fileFilter = (req, file, cb) => {
+  // Accept only image files
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed!"), false);
+  }
+};
+
+// Use Cloudinary if configured, otherwise use local storage
+// Temporarily force local storage for testing: change to localFileStorage
+const upload = multer({
+  storage: process.env.CLOUDINARY_CLOUD_NAME
+    ? cloudinaryStorage
+    : localFileStorage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+});
+
+// Debug middleware to log upload details
+app.use("/api/books", (req, res, next) => {
+  console.log("Request method:", req.method);
+  console.log("Content-Type:", req.get("Content-Type"));
+  next();
+});
 
 // Swagger configuration
 const swaggerOptions = {
@@ -29,10 +100,6 @@ const swaggerOptions = {
       {
         url: `http://localhost:${PORT}`,
         description: "Development server",
-      },
-      {
-        url: `https://books-api-cqpi.onrender.com`,
-        description: "Production server",
       },
     ],
     components: {
@@ -68,8 +135,9 @@ const swaggerOptions = {
             },
             image: {
               type: "string",
-              description: "Path to book cover image",
-              example: "/uploads/book-1234567890-123456789.jpg",
+              description: "URL to book cover image",
+              example:
+                "https://res.cloudinary.com/your-cloud/image/upload/v1234567890/books-api/book-1234567890-123456789.jpg",
             },
             createdAt: {
               type: "string",
@@ -222,43 +290,13 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Static files for uploaded images
+// Static files for uploaded images (only needed for local storage)
 app.use("/uploads", express.static("uploads"));
 
-// Create uploads directory if it doesn't exist
+// Create uploads directory if it doesn't exist (only needed for local storage)
 if (!fs.existsSync("uploads")) {
   fs.mkdirSync("uploads");
 }
-
-// Multer configuration for file uploads
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, "book-" + uniqueSuffix + path.extname(file.originalname));
-  },
-});
-
-const fileFilter = (req, file, cb) => {
-  // Accept only image files
-  if (file.mimetype.startsWith("image/")) {
-    cb(null, true);
-  } else {
-    cb(new Error("Only image files are allowed!"), false);
-  }
-};
-
-const upload = multer({
-  storage: storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
-  },
-});
-
-// MongoDB connection
 
 // Book Schema
 const bookSchema = new mongoose.Schema({
@@ -336,9 +374,18 @@ const handleValidationErrors = (req, res, next) => {
   if (!errors.isEmpty()) {
     // Clean up uploaded file if validation fails
     if (req.file) {
-      fs.unlink(req.file.path, (err) => {
-        if (err) console.error("Error deleting file:", err);
-      });
+      // For local storage
+      if (req.file.path) {
+        fs.unlink(req.file.path, (err) => {
+          if (err) console.error("Error deleting local file:", err);
+        });
+      }
+      // For Cloudinary, the file is already uploaded, so we need to delete it
+      if (req.file.public_id) {
+        cloudinary.uploader.destroy(req.file.public_id, (error, result) => {
+          if (error) console.error("Error deleting Cloudinary file:", error);
+        });
+      }
     }
 
     return res.status(400).json({
@@ -401,13 +448,34 @@ app.post(
         description,
       };
 
-      // Add image path if file was uploaded
+      // Debug logging
+      console.log("Request file:", req.file);
+      console.log(
+        "Cloudinary configured:",
+        !!process.env.CLOUDINARY_CLOUD_NAME
+      );
+
+      // Add image URL based on storage type
       if (req.file) {
-        bookData.image = `/uploads/${req.file.filename}`;
+        if (process.env.CLOUDINARY_CLOUD_NAME) {
+          // Cloudinary storage - use the secure_url from Cloudinary
+          bookData.image = req.file.path || req.file.secure_url || req.file.url;
+          console.log("Cloudinary image URL:", bookData.image);
+        } else {
+          // Local storage - use local path
+          bookData.image = `/uploads/${req.file.filename}`;
+          console.log("Local image path:", bookData.image);
+        }
+      } else {
+        console.log("No file uploaded");
       }
+
+      console.log("Book data before saving:", bookData);
 
       const book = new Book(bookData);
       const savedBook = await book.save();
+
+      console.log("Saved book:", savedBook);
 
       res.status(201).json({
         success: true,
@@ -415,11 +483,28 @@ app.post(
         data: savedBook,
       });
     } catch (error) {
+      console.error("Error saving book:", error);
+
       // Clean up uploaded file if database save fails
       if (req.file) {
-        fs.unlink(req.file.path, (err) => {
-          if (err) console.error("Error deleting file:", err);
-        });
+        if (process.env.CLOUDINARY_CLOUD_NAME && req.file.public_id) {
+          // Delete from Cloudinary
+          cloudinary.uploader.destroy(
+            req.file.public_id,
+            (cloudinaryError, result) => {
+              if (cloudinaryError)
+                console.error(
+                  "Error deleting Cloudinary file:",
+                  cloudinaryError
+                );
+            }
+          );
+        } else if (req.file.path) {
+          // Delete local file
+          fs.unlink(req.file.path, (err) => {
+            if (err) console.error("Error deleting local file:", err);
+          });
+        }
       }
 
       if (error.name === "ValidationError") {
@@ -693,6 +778,7 @@ app.use((error, req, res, next) => {
 
 // Start server
 app.listen(PORT, async () => {
+  // MongoDB connection
   await mongoose
     .connect(process.env.MONGODB_URI, {
       useNewUrlParser: true,
@@ -700,9 +786,17 @@ app.listen(PORT, async () => {
     })
     .then(() => console.log("Connected to MongoDB"))
     .catch((err) => console.error("MongoDB connection error:", err));
+
   console.log(`Server is running on port ${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
   console.log(`API Documentation: http://localhost:${PORT}/api-docs`);
+
+  // Log storage configuration
+  if (process.env.CLOUDINARY_CLOUD_NAME) {
+    console.log("Using Cloudinary for image storage");
+  } else {
+    console.log("Using local storage for images");
+  }
 });
 
 module.exports = app;
